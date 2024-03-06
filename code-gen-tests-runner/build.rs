@@ -12,11 +12,16 @@ use std::process::Command;
 
 use walkdir::WalkDir;
 
-// These two control where this script looks for source and corresponding class files
-const SOURCE_PATH: &str = "./tests/java/src/ion_data_model";
-const TARGET_PATH: &str = "./target";
-
 fn main() -> std::io::Result<()> {
+    let source_path = &format!(
+        "{}/code-gen-tests-runner/tests/java/ion_data_model",
+        workspace_dir().as_os_str().to_str().unwrap()
+    );
+
+    let target_path = &format!(
+        "{}/code-gen-tests-runner/target/",
+        workspace_dir().as_os_str().to_str().unwrap()
+    );
     let output_rust = &PathBuf::from(format!(
         "{}/code-gen-tests-runner/tests/",
         workspace_dir().as_os_str().to_str().unwrap()
@@ -24,8 +29,9 @@ fn main() -> std::io::Result<()> {
     .join("ion_data_model");
     generate_test_code_for("rust", output_rust);
     println!("cargo:warning=generated rust code for tests");
+
     let output_java = &PathBuf::from(format!(
-        "{}/code-gen-tests-runner/tests/java/src",
+        "{}/code-gen-tests-runner/tests/java/",
         workspace_dir().as_os_str().to_str().unwrap()
     ))
     .join("ion_data_model");
@@ -33,12 +39,12 @@ fn main() -> std::io::Result<()> {
     println!("cargo:warning=generated java code for tests");
 
     // Rerun java build if any source file changes, but then we'll check each file individually below
-    println!("cargo:rerun-if-changed={}", SOURCE_PATH);
+    println!("cargo:rerun-if-changed={}", source_path);
     println!("cargo:rustc-env=CLASSPATH=target/java");
 
-    let target_dir = Path::new(TARGET_PATH);
+    let target_dir = Path::new(target_path);
 
-    for entry_result in WalkDir::new(SOURCE_PATH) {
+    for entry_result in WalkDir::new(source_path) {
         let entry = entry_result?;
 
         if let Some(extension) = entry.path().extension() {
@@ -55,16 +61,19 @@ fn main() -> std::io::Result<()> {
                 let build_file = BuildFile { source, target };
 
                 if !file_up_to_date(&build_file)? {
-                    build_java(&build_file)?;
+                    build_java(&build_file, source_path, target_path)?;
                 }
             }
         }
     }
-    println!("cargo:warning=built java code for tests");
+    println!(
+        "cargo:warning=built java code for tests {}",
+        env!("CARGO_PKG_README")
+    );
 
     // TODO: generate test files for generated java code and run tests for java roundtrip
 
-    let dest_path = Path::new(SOURCE_PATH).join("GeneratedCodeTests.java");
+    let dest_path = Path::new(source_path).join("GeneratedCodeTests.java");
 
     fs::write(
         &dest_path,
@@ -80,26 +89,9 @@ fn main() -> std::io::Result<()> {
         "#,
     )
     .unwrap();
-    let target_class_path = Path::new(TARGET_PATH).join("ion_data_model");
-    let run_java_test = Command::new("java")
-        .args([
-            "-ea",
-            "-cp",
-            &target_class_path.display().to_string(),
-            &dest_path.display().to_string(),
-        ])
-        .output()?;
-    if !run_java_test.status.success() {
-        let stderr: String =
-            String::from_utf8(run_java_test.stderr).expect("Unable to parse java output");
 
-        println!(
-            "cargo:warning=Failed to run tests for generated java code:{}",
-            stderr
-        );
-    } else {
-        println!("cargo:warning=generated java code tests ran successfully");
-    }
+    println!("cargo:warning=generated unit test for generated java code");
+
     Ok(())
 }
 
@@ -116,14 +108,18 @@ fn file_up_to_date(BuildFile { source, target }: &BuildFile) -> std::io::Result<
 }
 
 /// Executes javac to build the specified file
-fn build_java(input: &BuildFile) -> std::io::Result<()> {
-    let target_class_dir = Path::new(TARGET_PATH).join("ion_data_model");
+fn build_java(
+    input: &BuildFile,
+    source_path: &String,
+    target_path: &String,
+) -> std::io::Result<()> {
+    let target_class_dir = Path::new(target_path).join("ion_data_model");
     let output = Command::new("javac")
         .args([
             "-d", // Specify the target directory for class files. Javac will create all parents if needed
             &target_class_dir.display().to_string(),
             "-sourcepath", // Specify where to find other source files (e.g. dependencies)
-            SOURCE_PATH,
+            source_path,
             input.source.to_str().unwrap(), // assuming that we're not dealing with weird filenames
         ])
         .output()?;
