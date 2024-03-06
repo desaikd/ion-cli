@@ -1,0 +1,8 @@
+{
+    a: 6,
+    b: "hello",
+    c: {
+        d: false,
+        e: HELLO
+    }
+}

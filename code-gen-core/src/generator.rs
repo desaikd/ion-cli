@@ -1,7 +1,7 @@
-use crate::commands::beta::generate::context::{AbstractDataType, CodeGenContext};
-use crate::commands::beta::generate::result::{invalid_abstract_data_type_error, CodeGenResult};
-use crate::commands::beta::generate::utils::{Field, Import, JavaLanguage, Language, RustLanguage};
-use crate::commands::beta::generate::utils::{IonSchemaType, Template};
+use crate::context::{AbstractDataType, CodeGenContext};
+use crate::result::{invalid_abstract_data_type_error, CodeGenResult};
+use crate::utils::{Field, Import, JavaLanguage, Language, RustLanguage};
+use crate::utils::{IonSchemaType, Template};
 use convert_case::{Case, Casing};
 use ion_schema::isl::isl_constraint::{IslConstraint, IslConstraintValue};
 use ion_schema::isl::isl_type::IslType;
@@ -11,10 +11,22 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::marker::PhantomData;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tera::{Context, Tera};
 
-pub(crate) struct CodeGenerator<'a, L: Language> {
+fn workspace_dir() -> PathBuf {
+    let output = std::process::Command::new(env!("CARGO"))
+        .arg("locate-project")
+        .arg("--workspace")
+        .arg("--message-format=plain")
+        .output()
+        .unwrap()
+        .stdout;
+    let cargo_path = Path::new(std::str::from_utf8(&output).unwrap().trim());
+    cargo_path.parent().unwrap().to_path_buf()
+}
+
+pub struct CodeGenerator<'a, L: Language> {
     // Represents the templating engine - tera
     // more information: https://docs.rs/tera/latest/tera/
     pub(crate) tera: Tera,
@@ -31,7 +43,13 @@ impl<'a> CodeGenerator<'a, RustLanguage> {
         Self {
             output,
             anonymous_type_counter: 0,
-            tera: Tera::new("src/bin/ion/commands/beta/generate/templates/rust/*.templ").unwrap(),
+            tera: {
+                Tera::new(&format!(
+                    "{}/code-gen-core/src/templates/rust/*.templ",
+                    workspace_dir().as_os_str().to_str().unwrap()
+                ))
+                .unwrap()
+            },
             phantom: PhantomData,
             is_root_type: true,
         }
@@ -68,7 +86,10 @@ impl<'a> CodeGenerator<'a, RustLanguage> {
     ) -> CodeGenResult<()> {
         module_context.insert("modules", &modules);
         let rendered = self.tera.render("mod.templ", module_context)?;
-        let mut file = File::create(self.output.join("mod.rs"))?;
+        let mut file = File::options()
+            .append(true)
+            .create(true)
+            .open(self.output.join("mod.rs"))?;
         file.write_all(rendered.as_bytes())?;
         Ok(())
     }
@@ -79,7 +100,11 @@ impl<'a> CodeGenerator<'a, JavaLanguage> {
         Self {
             output,
             anonymous_type_counter: 0,
-            tera: Tera::new("src/bin/ion/commands/beta/generate/templates/java/*.templ").unwrap(),
+            tera: Tera::new(&format!(
+                "{}/code-gen-core/src/templates/java/*.templ",
+                workspace_dir().as_os_str().to_str().unwrap()
+            ))
+            .unwrap(),
             phantom: PhantomData,
             is_root_type: true,
         }
@@ -179,6 +204,14 @@ impl<'a, L: Language> CodeGenerator<'a, L> {
         )))
     }
 
+    /// Returns true if its a built in type for ISL otherwise returns false
+    pub fn is_built_in_isl_type(&self, name: &str) -> bool {
+        matches!(
+            name,
+            "int" | "string" | "bool" | "float" | "symbol" | "blob" | "clob"
+        )
+    }
+
     fn generate_abstract_data_type(
         &mut self,
         modules: &mut Vec<String>,
@@ -265,7 +298,7 @@ impl<'a, L: Language> CodeGenerator<'a, L> {
     ) -> CodeGenResult<String> {
         Ok(match isl_type_ref {
             IslTypeRef::Named(name, _) => {
-                if !L::is_built_in_type(name) {
+                if !self.is_built_in_isl_type(name) {
                     imports.push(Import {
                         name: name.to_string(),
                     });
@@ -307,20 +340,26 @@ impl<'a, L: Language> CodeGenerator<'a, L> {
                 self.generate_struct_field(
                     tera_fields,
                     L::target_type_as_sequence(&type_name),
+                    type_name,
                     "value",
                 )?;
             }
             IslConstraintValue::Fields(fields, content_closed) => {
                 // TODO: Check for `closed` annotation on fields and based on that return error while reading if there are extra fields.
                 self.verify_abstract_data_type_consistency(
-                    AbstractDataType::Structure(*content_closed),
+                    AbstractDataType::Struct(*content_closed),
                     code_gen_context,
                 )?;
                 for (name, value) in fields.iter() {
                     let type_name =
                         self.type_reference_name(value.type_reference(), modules, imports)?;
 
-                    self.generate_struct_field(tera_fields, type_name, name)?;
+                    self.generate_struct_field(
+                        tera_fields,
+                        type_name,
+                        value.type_reference().name(),
+                        name,
+                    )?;
                 }
             }
             IslConstraintValue::Type(isl_type) => {
@@ -330,7 +369,7 @@ impl<'a, L: Language> CodeGenerator<'a, L> {
                     AbstractDataType::Value,
                     code_gen_context,
                 )?;
-                self.generate_struct_field(tera_fields, type_name, "value")?;
+                self.generate_struct_field(tera_fields, type_name, isl_type.name(), "value")?;
             }
             _ => {}
         }
@@ -342,10 +381,12 @@ impl<'a, L: Language> CodeGenerator<'a, L> {
         &mut self,
         tera_fields: &mut Vec<Field>,
         abstract_data_type_name: String,
+        isl_type_name: String,
         field_name: &str,
     ) -> CodeGenResult<()> {
         tera_fields.push(Field {
             name: field_name.to_string(),
+            isl_value: isl_type_name.to_string(),
             value: abstract_data_type_name,
         });
         Ok(())
@@ -355,7 +396,7 @@ impl<'a, L: Language> CodeGenerator<'a, L> {
     /// This is referring to abstract data type determined with each constraint that is verifies
     /// that all the constraints map to a single abstract data type and not different abstract data types.
     /// e.g.
-    /// ```
+    /// ```ion-schema
     /// type::{
     ///   name: foo,
     ///   type: string,

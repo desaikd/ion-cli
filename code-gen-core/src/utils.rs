@@ -1,5 +1,5 @@
-use crate::commands::beta::generate::context::AbstractDataType;
-use crate::commands::beta::generate::result::{invalid_abstract_data_type_error, CodeGenError};
+use crate::context::AbstractDataType;
+use crate::result::{invalid_abstract_data_type_error, CodeGenError};
 use convert_case::{Case, Casing};
 use serde::Serialize;
 use std::fmt::{Display, Formatter};
@@ -9,6 +9,7 @@ use std::fmt::{Display, Formatter};
 #[derive(Serialize)]
 pub struct Field {
     pub(crate) name: String,
+    pub(crate) isl_value: String,
     pub(crate) value: String,
 }
 

@@ -72,7 +72,7 @@ pub enum AbstractDataType {
     //    b: String,
     // }
     // ```
-    Structure(bool),
+    Struct(bool),
 }
 
 impl Display for AbstractDataType {
@@ -83,7 +83,7 @@ impl Display for AbstractDataType {
             match self {
                 AbstractDataType::Value => "single value struct",
                 AbstractDataType::Sequence(_) => "sequence value struct",
-                AbstractDataType::Structure(_) => "struct",
+                AbstractDataType::Struct(_) => "struct",
             }
         )
     }

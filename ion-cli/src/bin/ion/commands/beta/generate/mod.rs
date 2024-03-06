@@ -1,13 +1,8 @@
-mod context;
-mod generator;
-mod result;
-mod utils;
-
-use crate::commands::beta::generate::generator::CodeGenerator;
-use crate::commands::beta::generate::utils::{JavaLanguage, RustLanguage};
 use crate::commands::IonCliCommand;
 use anyhow::{bail, Result};
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use code_gen_core::generator::CodeGenerator;
+use code_gen_core::utils::{JavaLanguage, RustLanguage};
 use ion_schema::authority::{DocumentAuthority, FileSystemDocumentAuthority};
 use ion_schema::system::SchemaSystem;
 use std::fs;
@@ -34,7 +29,6 @@ impl IonCliCommand for GenerateCommand {
             .arg(
                 Arg::new("schema")
                     .long("schema")
-                    .required(true)
                     .short('s')
                     .help("Schema file"),
             )
@@ -75,13 +69,10 @@ impl IonCliCommand for GenerateCommand {
         // Extract the user provided document authorities/ directories
         let authorities: Vec<&String> = args.get_many("directory").unwrap().collect();
 
-        // Extract schema file provided by user
-        let schema_id = args.get_one::<String>("schema").unwrap();
-
         // Set up document authorities vector
         let mut document_authorities: Vec<Box<dyn DocumentAuthority>> = vec![];
 
-        for authority in authorities {
+        for authority in &authorities {
             document_authorities.push(Box::new(FileSystemDocumentAuthority::new(Path::new(
                 authority,
             ))))
@@ -89,8 +80,6 @@ impl IonCliCommand for GenerateCommand {
 
         // Create a new schema system from given document authorities
         let mut schema_system = SchemaSystem::new(document_authorities);
-
-        let schema = schema_system.load_isl_schema(schema_id).unwrap();
 
         // clean the target output directory if it already exists, before generating new code
         if output.exists() {
@@ -100,15 +89,40 @@ impl IonCliCommand for GenerateCommand {
 
         println!("Started generating code...");
 
-        // generate code based on schema and programming language
-        match language {
-            "java" => CodeGenerator::<JavaLanguage>::new(output).generate(schema)?,
-            "rust" => CodeGenerator::<RustLanguage>::new(output).generate(schema)?,
-            _ => bail!(
-                "Programming language '{}' is not yet supported. Currently supported targets: 'java', 'rust'",
-                language
-            )
-        }
+        // Extract schema file provided by user
+        match args.get_one::<String>("schema") {
+            None => {
+                let paths = fs::read_dir(PathBuf::from(authorities[0]))?;
+                for schema_id in paths {
+                    let schema = schema_system
+                        .load_isl_schema(schema_id?.path().file_name().unwrap().to_str().unwrap())
+                        .unwrap();
+
+                    // generate code based on schema and programming language
+                    match language {
+                        "java" => CodeGenerator::<JavaLanguage>::new(output).generate(schema)?,
+                        "rust" => CodeGenerator::<RustLanguage>::new(output).generate(schema)?,
+                        _ => bail!(
+                                "Programming language '{}' is not yet supported. Currently supported targets: 'java', 'rust'",
+                                language
+                            )
+                    }
+                }
+            }
+            Some(schema_id) => {
+                let schema = schema_system.load_isl_schema(schema_id).unwrap();
+
+                // generate code based on schema and programming language
+                match language {
+                    "java" => CodeGenerator::<JavaLanguage>::new(output).generate(schema)?,
+                    "rust" => CodeGenerator::<RustLanguage>::new(output).generate(schema)?,
+                    _ => bail!(
+                            "Programming language '{}' is not yet supported. Currently supported targets: 'java', 'rust'",
+                            language
+                        )
+                }
+            }
+        };
 
         println!("Code generation complete successfully!");
         println!("Path to generated code: {}", output.display());
