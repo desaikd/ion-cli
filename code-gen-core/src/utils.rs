@@ -56,6 +56,10 @@ pub trait Language {
     ///     In Rust, Template::Struct -> "struct"
     ///     In Java, Template::Struct -> "class"
     fn template_name(template: &Template) -> String;
+
+    /// Used by generator to generate modules or not based on programming language
+    /// Note: Only Rust code generation currently generates module file
+    fn requires_modules() -> bool;
 }
 
 pub struct JavaLanguage;
@@ -102,6 +106,10 @@ impl Language for JavaLanguage {
         match template {
             Template::Struct => "class".to_string(),
         }
+    }
+
+    fn requires_modules() -> bool {
+        false
     }
 }
 
@@ -155,6 +163,10 @@ impl Language for RustLanguage {
         match template {
             Template::Struct => "struct".to_string(),
         }
+    }
+
+    fn requires_modules() -> bool {
+        true
     }
 }
 

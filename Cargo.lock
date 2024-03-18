@@ -307,17 +307,7 @@ name = "code-gen-tests-runner"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
- "clap",
  "code-gen-core",
- "convert_case",
- "glob",
- "ion-rs 1.0.0-rc.3",
- "ion-schema",
- "proc-macro2",
- "quote",
- "syn 2.0.52",
- "tempfile",
- "walkdir",
 ]
 
 [[package]]
@@ -688,12 +678,6 @@ dependencies = [
  "libc",
  "wasi",
 ]
-
-[[package]]
-name = "glob"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "globset"

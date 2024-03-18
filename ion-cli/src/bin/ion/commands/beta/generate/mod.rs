@@ -1,5 +1,6 @@
 use crate::commands::IonCliCommand;
 use anyhow::{bail, Result};
+use clap::builder::TypedValueParser;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use code_gen_core::generator::CodeGenerator;
 use code_gen_core::utils::{JavaLanguage, RustLanguage};
@@ -7,6 +8,7 @@ use ion_schema::authority::{DocumentAuthority, FileSystemDocumentAuthority};
 use ion_schema::system::SchemaSystem;
 use std::fs;
 use std::path::{Path, PathBuf};
+
 pub struct GenerateCommand;
 
 impl IonCliCommand for GenerateCommand {
@@ -59,63 +61,38 @@ impl IonCliCommand for GenerateCommand {
 
         // Extract output path information where the generated code will be saved
         // Create a module `ion_data_model` for storing all the generated code in the output directory
-        let binding = match args.get_one::<String>("output") {
-            Some(output_path) => PathBuf::from(output_path).join("ion_data_model"),
-            None => PathBuf::from("./ion_data_model"),
+        let mut output = match args.get_one::<String>("output") {
+            Some(output_path) => PathBuf::from(output_path),
+            None => PathBuf::from("."),
         };
 
-        let output = binding.as_path();
-
         // Extract the user provided document authorities/ directories
-        let authorities: Vec<&String> = args.get_many("directory").unwrap().collect();
-
-        // Set up document authorities vector
-        let mut document_authorities: Vec<Box<dyn DocumentAuthority>> = vec![];
-
-        for authority in &authorities {
-            document_authorities.push(Box::new(FileSystemDocumentAuthority::new(Path::new(
-                authority,
-            ))))
-        }
-
-        // Create a new schema system from given document authorities
-        let mut schema_system = SchemaSystem::new(document_authorities);
-
-        // clean the target output directory if it already exists, before generating new code
-        if output.exists() {
-            fs::remove_dir_all(output).unwrap();
-        }
-        fs::create_dir_all(output).unwrap();
+        let authorities_string: Vec<&String> = args.get_many("directory").unwrap().collect();
+        let authorities: Vec<PathBuf> = authorities_string
+            .iter()
+            .map(|v| PathBuf::from(v))
+            .collect();
 
         println!("Started generating code...");
 
         // Extract schema file provided by user
         match args.get_one::<String>("schema") {
             None => {
-                let paths = fs::read_dir(PathBuf::from(authorities[0]))?;
-                for schema_id in paths {
-                    let schema = schema_system
-                        .load_isl_schema(schema_id?.path().file_name().unwrap().to_str().unwrap())
-                        .unwrap();
-
-                    // generate code based on schema and programming language
-                    match language {
-                        "java" => CodeGenerator::<JavaLanguage>::new(output).generate(schema)?,
-                        "rust" => CodeGenerator::<RustLanguage>::new(output).generate(schema)?,
+                // generate code based on schema and programming language
+                match language {
+                        "java" => CodeGenerator::<JavaLanguage>::new(&mut output, authorities.iter().collect())?.generate_code_for_authorities()?,
+                        "rust" => CodeGenerator::<RustLanguage>::new(&mut output, authorities.iter().collect())?.generate_code_for_authorities()?,
                         _ => bail!(
                                 "Programming language '{}' is not yet supported. Currently supported targets: 'java', 'rust'",
                                 language
                             )
                     }
-                }
             }
             Some(schema_id) => {
-                let schema = schema_system.load_isl_schema(schema_id).unwrap();
-
                 // generate code based on schema and programming language
                 match language {
-                    "java" => CodeGenerator::<JavaLanguage>::new(output).generate(schema)?,
-                    "rust" => CodeGenerator::<RustLanguage>::new(output).generate(schema)?,
+                    "java" => CodeGenerator::<JavaLanguage>::new(&mut output, authorities.iter().collect())?.generate_code_for(schema_id.to_string())?,
+                    "rust" => CodeGenerator::<RustLanguage>::new(&mut output, authorities.iter().collect())?.generate_code_for(schema_id.to_string())?,
                     _ => bail!(
                             "Programming language '{}' is not yet supported. Currently supported targets: 'java', 'rust'",
                             language

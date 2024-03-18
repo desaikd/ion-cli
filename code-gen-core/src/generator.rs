@@ -1,17 +1,21 @@
 use crate::context::{AbstractDataType, CodeGenContext};
+use crate::result::CodeGenError::IoError;
 use crate::result::{invalid_abstract_data_type_error, CodeGenResult};
 use crate::utils::{Field, Import, JavaLanguage, Language, RustLanguage};
 use crate::utils::{IonSchemaType, Template};
 use convert_case::{Case, Casing};
+use ion_schema::authority::{DocumentAuthority, FileSystemDocumentAuthority};
 use ion_schema::isl::isl_constraint::{IslConstraint, IslConstraintValue};
 use ion_schema::isl::isl_type::IslType;
 use ion_schema::isl::isl_type_reference::IslTypeRef;
-use ion_schema::isl::IslSchema;
+use ion_schema::system::SchemaSystem;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
+use std::fs;
+use std::fs::{DirEntry, File};
+use std::io::{Error, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use tera::{Context, Tera};
 
 fn workspace_dir() -> PathBuf {
@@ -26,11 +30,19 @@ fn workspace_dir() -> PathBuf {
     cargo_path.parent().unwrap().to_path_buf()
 }
 
-pub struct CodeGenerator<'a, L: Language> {
+// TODO: Add generate_code_with_tests_for(schema) - JavaLanguage, RustLanguage
+pub struct CodeGenerator<'a, L: Language + 'a> {
     // Represents the templating engine - tera
     // more information: https://docs.rs/tera/latest/tera/
     pub(crate) tera: Tera,
-    output: &'a Path,
+    output: &'a mut PathBuf,
+    // Represents current test input Ion file that can be used to generate test
+    current_test_input: Option<PathBuf>,
+    // Represents the schema system that is used by the code generator to load schema
+    schema_system: SchemaSystem,
+    // Represents the document authorities stored in the schema system
+    //TODO: remove this property once the below issue is resolved in `ion-schema-rust`: https://github.com/amazon-ion/ion-schema-rust/issues/212
+    authorities: Vec<&'a PathBuf>,
     // Represents a counter for naming anonymous type definitions
     pub(crate) anonymous_type_counter: usize,
     // Current type definition is root type or not
@@ -39,66 +51,78 @@ pub struct CodeGenerator<'a, L: Language> {
 }
 
 impl<'a> CodeGenerator<'a, RustLanguage> {
-    pub fn new(output: &'a Path) -> CodeGenerator<RustLanguage> {
-        Self {
-            output,
+    pub fn new(
+        output: &'a mut PathBuf,
+        authorities: Vec<&'a PathBuf>,
+    ) -> CodeGenResult<CodeGenerator<'a, RustLanguage>> {
+        // set up document authorities vector
+        let mut document_authorities: Vec<Box<dyn DocumentAuthority>> = vec![];
+
+        for authority in &authorities {
+            document_authorities.push(Box::new(FileSystemDocumentAuthority::new(Path::new(
+                authority,
+            ))))
+        }
+
+        Ok(Self {
+            output: {
+                // create `ion_data_model` module inside the output directory where all the generated code will be stored.
+                output.push("ion_data_model");
+
+                // clean the target output directory if it already exists, before generating new code
+                if output.as_path().exists() {
+                    fs::remove_dir_all(output.as_path())?;
+                }
+                fs::create_dir_all(output.as_path())?;
+                output
+            },
+            current_test_input: None,
+            // creates a schema system with given authorities
+            schema_system: SchemaSystem::new(document_authorities),
+            authorities,
             anonymous_type_counter: 0,
             tera: {
                 Tera::new(&format!(
                     "{}/code-gen-core/src/templates/rust/*.templ",
                     workspace_dir().as_os_str().to_str().unwrap()
-                ))
-                .unwrap()
+                ))?
             },
             phantom: PhantomData,
             is_root_type: true,
-        }
-    }
-
-    /// Generates code in Rust for given Ion Schema
-    pub fn generate(&mut self, schema: IslSchema) -> CodeGenResult<()> {
-        // this will be used for Rust to create mod.rs which lists all the generated modules
-        let mut modules = vec![];
-        let mut module_context = tera::Context::new();
-
-        // Register a tera filter that can be used to convert a string based on case
-        self.tera.register_filter("upper_camel", Self::upper_camel);
-        self.tera.register_filter("snake", Self::snake);
-        self.tera.register_filter("camel", Self::camel);
-
-        // Register a tera filter that can be used to see if a type is built in data type or not
-        self.tera
-            .register_filter("is_built_in_type", Self::is_built_in_type);
-
-        for isl_type in schema.types() {
-            self.generate_abstract_data_type(&mut modules, isl_type)?;
-        }
-
-        self.generate_modules(&mut modules, &mut module_context)?;
-
-        Ok(())
-    }
-
-    pub fn generate_modules(
-        &mut self,
-        modules: &mut Vec<String>,
-        module_context: &mut Context,
-    ) -> CodeGenResult<()> {
-        module_context.insert("modules", &modules);
-        let rendered = self.tera.render("mod.templ", module_context)?;
-        let mut file = File::options()
-            .append(true)
-            .create(true)
-            .open(self.output.join("mod.rs"))?;
-        file.write_all(rendered.as_bytes())?;
-        Ok(())
+        })
     }
 }
 
 impl<'a> CodeGenerator<'a, JavaLanguage> {
-    pub fn new(output: &'a Path) -> CodeGenerator<JavaLanguage> {
-        Self {
-            output,
+    pub fn new(
+        output: &'a mut PathBuf,
+        authorities: Vec<&'a PathBuf>,
+    ) -> CodeGenResult<CodeGenerator<'a, JavaLanguage>> {
+        // set up document authorities vector
+        let mut document_authorities: Vec<Box<dyn DocumentAuthority>> = vec![];
+
+        for authority in &authorities {
+            document_authorities.push(Box::new(FileSystemDocumentAuthority::new(Path::new(
+                authority,
+            ))))
+        }
+
+        Ok(Self {
+            output: {
+                // create `ion_data_model` module inside the output directory where all the generated code will be stored.
+                output.push("ion_data_model");
+
+                // clean the target output directory if it already exists, before generating new code
+                if output.as_path().exists() {
+                    fs::remove_dir_all(output.as_path())?;
+                }
+                fs::create_dir_all(output.as_path())?;
+                output
+            },
+            current_test_input: None,
+            // creates a schema system with given authorities
+            schema_system: SchemaSystem::new(document_authorities),
+            authorities,
             anonymous_type_counter: 0,
             tera: Tera::new(&format!(
                 "{}/code-gen-core/src/templates/java/*.templ",
@@ -107,28 +131,11 @@ impl<'a> CodeGenerator<'a, JavaLanguage> {
             .unwrap(),
             phantom: PhantomData,
             is_root_type: true,
-        }
-    }
-
-    /// Generates code in Java for given Ion Schema
-    pub fn generate(&mut self, schema: IslSchema) -> CodeGenResult<()> {
-        // this will be used for Rust to create mod.rs which lists all the generated modules
-        let mut modules = vec![];
-
-        // Register a tera filter that can be used to convert a string based on case
-        self.tera.register_filter("upper_camel", Self::upper_camel);
-        self.tera.register_filter("snake", Self::snake);
-        self.tera.register_filter("camel", Self::camel);
-
-        for isl_type in schema.types() {
-            self.generate_abstract_data_type(&mut modules, isl_type)?;
-        }
-
-        Ok(())
+        })
     }
 }
 
-impl<'a, L: Language> CodeGenerator<'a, L> {
+impl<'a, L: Language + 'static> CodeGenerator<'a, L> {
     /// Represents a [tera] filter that converts given tera string value to [upper camel case].
     /// Returns error if the given value is not a string.
     ///
@@ -212,6 +219,186 @@ impl<'a, L: Language> CodeGenerator<'a, L> {
         )
     }
 
+    /// Generates code in Rust for given Ion Schema id
+    pub fn generate_code_for(&mut self, schema_id: String) -> CodeGenResult<()> {
+        self.generate(schema_id)
+    }
+
+    /// Generates code with tests in Rust for given Ion Schema id
+    pub fn generate_code_with_tests_for(
+        &mut self,
+        schema_id: String,
+        test_input: PathBuf,
+    ) -> CodeGenResult<()> {
+        // set the test case input
+        self.current_test_input = Some(test_input);
+        self.generate(schema_id)
+    }
+
+    /// Generates code in Rust for schemas in given authorities
+    pub fn generate_code_for_authorities(&mut self) -> CodeGenResult<()> {
+        let paths = fs::read_dir(self.authorities[0])?;
+
+        for schema_file in paths {
+            self.is_root_type = true;
+
+            let schema_id = Self::schema_id_from(schema_file?)?;
+            // generate code based on schema and programming language
+            self.generate(schema_id)?;
+        }
+        Ok(())
+    }
+
+    /// Generates code with tests in Rust for schemas. Use given test input folder
+    /// which has test case Ion files with same filename as each schema in the authorities.
+    /// Note: Generated code will have a single module for all the data models created for schemas in given authorities.
+    // This method wraps the generated code into a crate or gradle project and is used only by the build script
+    pub fn generate_code_with_tests_for_authorities(
+        &mut self,
+        test_input_str: &str,
+    ) -> CodeGenResult<()> {
+        // remove the previously added `ion_data_model`, then add `ion-code-gen/ion_data_model` since this method generates a crate to be used for testing
+        fs::remove_dir(self.output.as_path())?;
+        self.output.pop();
+        self.output.push("ion-code-gen");
+        if self.output.exists() {
+            fs::remove_dir_all(self.output.as_path())?;
+        }
+        fs::create_dir_all(self.output.as_path())?;
+
+        if L::requires_modules() {
+            self.output.push("src");
+            self.output.push("ion_data_model");
+            fs::create_dir_all(self.output.as_path())?;
+        } else {
+            //TODO: initialize gradle project and generate ion_data_model inside src/main/java for generated classes
+            // generate tests in test/main/java/ion_data_model
+
+            let output = Command::new("gradle")
+                .args([
+                    "init",
+                    "--use-defaults",
+                    "--type",
+                    "java-library",
+                    "--project-dir",
+                    &format!("{}", self.output.display()),
+                ])
+                .output()?;
+            if output.status.success() {
+                self.output.push("lib");
+                self.output.push("src");
+                self.output.push("main");
+                self.output.push("java");
+                self.output.push("ion_data_model");
+                fs::create_dir_all(self.output.as_path())?;
+            } else {
+                std::io::stderr().write_all(&output.stderr).unwrap();
+                return Err(IoError {
+                    source: Error::other(
+                        "Error generating gradle project for Java code generation with tests",
+                    ),
+                });
+            }
+        }
+
+        let paths = fs::read_dir(self.authorities[0])?;
+
+        for schema_file in paths {
+            self.is_root_type = true;
+            let schema_id = Self::schema_id_from(schema_file?)?;
+            let input_file_name = &schema_id.replace("isl", "ion");
+            let test_input = Path::new(test_input_str).join(input_file_name);
+
+            // generate code based on schema with test based on current test input
+            self.generate_code_with_tests_for(schema_id, test_input)?;
+        }
+
+        if L::requires_modules() {
+            let rendered_cargo_toml = self.tera.render("Cargo.toml.templ", &Context::new())?;
+            let mut cargo_toml_file = File::options().write(true).create(true).open(
+                self.output
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .join("Cargo.toml"),
+            )?;
+            cargo_toml_file.write_all(rendered_cargo_toml.as_bytes())?;
+            let rendered_lib = self.tera.render("lib.templ", &Context::new())?;
+            let mut cargo_lib_file = File::options()
+                .write(true)
+                .create(true)
+                .open(self.output.parent().unwrap().join("lib.rs"))?;
+            cargo_lib_file.write_all(rendered_lib.as_bytes())?;
+        }
+        Ok(())
+    }
+
+    /// Returns schema id from given directory entry path
+    fn schema_id_from(schema_file: DirEntry) -> CodeGenResult<String> {
+        let schema_file_path = schema_file.path();
+        let schema_id = schema_file_path
+            .file_name()
+            .ok_or(IoError {
+                source: Error::other(format!(
+                    "Filename returned `None` for given path, the path terminates in ...: {}",
+                    schema_file_path.display()
+                )),
+            })?
+            .to_str()
+            .ok_or(IoError {
+                source: Error::other(format!(
+                    "Given schema file path can not be converted valid UTF-8 string for extracting schema id: {}",
+                    schema_file_path.display()
+                )),
+            })?;
+        Ok(schema_id.to_string())
+    }
+
+    /// Generates code in Rust for given Ion Schema id with or without tests as per `test_input` value
+    fn generate(&mut self, schema_id: String) -> CodeGenResult<()> {
+        // load Ion schema with given schema id
+        let schema = self.schema_system.load_isl_schema(schema_id)?;
+
+        // this will be used for Rust to create mod.rs which lists all the generated modules
+        let mut modules = vec![];
+        let mut module_context = tera::Context::new();
+
+        // Register a tera filter that can be used to convert a string based on case
+        self.tera.register_filter("upper_camel", Self::upper_camel);
+        self.tera.register_filter("snake", Self::snake);
+        self.tera.register_filter("camel", Self::camel);
+
+        // Register a tera filter that can be used to see if a type is built in data type or not
+        self.tera
+            .register_filter("is_built_in_type", Self::is_built_in_type);
+
+        for isl_type in schema.types() {
+            self.generate_abstract_data_type(&mut modules, isl_type)?;
+        }
+
+        if L::requires_modules() {
+            self.generate_modules(&mut modules, &mut module_context)?;
+        }
+        Ok(())
+    }
+
+    // This method is only triggered for Rust code based on `L::requires_modules()`
+    fn generate_modules(
+        &mut self,
+        modules: &mut Vec<String>,
+        module_context: &mut Context,
+    ) -> CodeGenResult<()> {
+        module_context.insert("modules", &modules);
+        let rendered = self.tera.render("mod.templ", module_context)?;
+        let mut mod_file = File::options()
+            .append(true)
+            .create(true)
+            .open(self.output.join("mod.rs"))?;
+        mod_file.write_all(rendered.as_bytes())?;
+        Ok(())
+    }
+
     fn generate_abstract_data_type(
         &mut self,
         modules: &mut Vec<String>,
@@ -262,6 +449,11 @@ impl<'a, L: Language> CodeGenerator<'a, L> {
                 );
         }
 
+        if let Some(test_input) = &self.current_test_input {
+            context.insert("generate_test", &true);
+            let ion_string = fs::read_to_string(PathBuf::from(test_input))?;
+            context.insert("ion_string", &ion_string);
+        }
         self.render_generated_code(modules, &isl_type_name, &mut context, &mut code_gen_context)
     }
 

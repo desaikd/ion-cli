@@ -5,25 +5,8 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
-quote = "1.0.33"
-syn = { version="2.0.39", features=["full"] }
-proc-macro2 = "1.0.70"
-clap = { version = "4.0.17", features = ["cargo"] }
-assert_cmd = "~1.0.5"
-glob = "0.3.1"
-tempfile = "3.2.0"
-convert_case = "0.6.0"
-ion-rs = {version = "1.0.0-rc.2", features = ["experimental"]}
-walkdir = "2.4.0"
-
 [build-dependencies]
 code-gen-core = {path = "../code-gen-core"}
-ion-schema = "0.10.0"
-walkdir = "2.4.0"
 
 [dev-dependencies]
 assert_cmd = "~1.0.5"
-
-[lib]
-proc-macro = true

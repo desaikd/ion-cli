@@ -115,3 +115,32 @@ impl {{ target_kind_name }} {
         Ok(())
     }
 }
+
+{% if generate_test and is_root_type %}
+#[cfg(test)]
+mod generated_code_tests {
+    use ion_rs::ReaderBuilder;
+    use ion_rs::TextWriterBuilder;
+    use ion_rs::IonWriter;
+    use ion_rs::Element;
+    use ion_rs::IonResult;
+    use super::*;
+
+   #[test]
+   #[allow(non_snake_case)]
+   fn {{ target_kind_name | snake }}_test () -> IonResult<()> {
+            let mut reader = ReaderBuilder::new().build(r#"{{ion_string}}"#)?;
+            let mut buffer = Vec::new();
+            let mut text_writer = TextWriterBuilder::default().build(&mut buffer)?;
+            // read given Ion value using Ion reader
+            let mut x: {{ target_kind_name }} = {{ target_kind_name }}::read_from(&mut reader)?;
+            // write the generated abstract data type using Ion writer
+            x.write_to(&mut text_writer)?;
+            text_writer.flush()?;
+            // compare given Ion value with round tripped Ion value written using abstract data type's `write_to` API
+            assert_eq!(Element::read_one(text_writer.output().as_slice())?, (Element::read_one(r#"{{ion_string}}"#)?));
+
+            Ok(())
+   }
+}
+{% endif %}
