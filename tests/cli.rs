@@ -443,19 +443,15 @@ fn roundtrip_tests_for_generated_code_gradle() -> Result<()> {
     // so simply running the tests on this project builds the project, generates code and runs tests
 
     // absolute paths for gradle project and executables
-    // let test_crate_path = format!(
-    //     "{}/code-gen-projects/java/code-gen-demo",
-    //     env!("CARGO_MANIFEST_DIR")
-    // );
-    let test_crate_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("code-gen-projects")
-        .join("java")
-        .join("code-gen-demo");
-    let gradle_executable = &test_crate_path.join("gradlew");
+    let test_crate_path = format!(
+        "{}/code-gen-projects/java/code-gen-demo",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let gradle_executable = format!("{}/gradlew", test_crate_path);
 
     // Clean and Test
-    let gradle_output = std::process::Command::new(gradle_executable.to_str().unwrap())
-        .current_dir(&test_crate_path.to_str().unwrap())
+    let gradle_output = std::process::Command::new(gradle_executable)
+        .current_dir(&test_crate_path)
         .arg("clean")
         .arg("test")
         .output()
