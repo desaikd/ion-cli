@@ -317,9 +317,12 @@ fn test_code_generation_in_rust(
         assert!(contents.contains(expected_accessor));
     }
     // verify that it generates read-write APIs
-    assert!(contents.contains("pub fn read_from(reader: &mut Reader) -> IonResult<Self> {"));
-    assert!(contents
-        .contains("pub fn write_to<W: IonWriter>(&self, writer: &mut W) -> IonResult<()> {"));
+    assert!(contents.contains(
+        "pub fn read_from<'top, D: LazyDecoder>(value: ValueRef<'top, D>) -> IonResult<Self> {"
+    ));
+    assert!(
+        contents.contains("fn write_as_ion<V: ValueWriter>(&self, writer: V) -> IonResult<()> {")
+    );
     Ok(())
 }
 

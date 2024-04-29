@@ -1,1 +1,9 @@
-use ion_rs::{IonResult, IonReader, Reader, IonWriter, StreamItem};
+use ion_rs::{IonResult, IonType};
+use ion_rs::lazy::value_ref::ValueRef;
+use ion_rs::lazy::decoder::LazyDecoder;
+use ion_rs::lazy::encoder::value_writer::ValueWriter;
+use ion_rs::lazy::encoder::write_as_ion::WriteAsIon;
+use ion_rs::lazy::encoder::value_writer::StructWriter;
+use ion_rs::lazy::encoder::value_writer::SequenceWriter;
+use ion_rs::lazy::encoder::value_writer::internal::FieldEncoder;
+
