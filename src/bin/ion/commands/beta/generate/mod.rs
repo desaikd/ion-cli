@@ -2,6 +2,7 @@ mod context;
 mod generator;
 mod result;
 mod utils;
+pub(crate) mod templates;
 
 use crate::commands::beta::generate::generator::CodeGenerator;
 use crate::commands::beta::generate::utils::{JavaLanguage, RustLanguage};
