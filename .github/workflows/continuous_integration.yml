@@ -7,24 +7,21 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-      - run: |
-          cd docs
-          cargo test --all
+      - working-directory: ./docs
+        run: cargo test --all
 
   format:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
-      - run: |
-          cd docs
-          cargo fmt --all -- --check
+      - working-directory: ./docs
+        run: cargo fmt --all -- --check
 
   clippy:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
-      - run: |
-          cd docs
-          cargo clippy --all -- -D warnings
+      - working-directory: ./docs
+        run: cargo clippy --all -- -D warnings

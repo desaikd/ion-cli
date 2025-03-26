@@ -18,10 +18,8 @@ jobs:
       - uses: jetli/wasm-bindgen-action@v0.1.0
 
       - uses: actions/checkout@v2
-
-      - run: |
-          cd docs
-          trunk build --release
+      - working-directory: ./docs
+        run: trunk build --release
 
 
       - uses: peaceiris/actions-gh-pages@v3
