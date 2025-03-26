@@ -7,7 +7,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-      - working-directory: ./docs
+      - working-directory: ./ion-cli-wasm
         run: cargo test --all
 
   format:
@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-      - working-directory: ./docs
+      - working-directory: ./ion-cli-wasm
         run: cargo fmt --all -- --check
 
   clippy:
@@ -23,5 +23,5 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-      - working-directory: ./docs
+      - working-directory: ./ion-cli-wasm
         run: cargo clippy --all -- -D warnings

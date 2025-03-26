@@ -427,6 +427,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ion-cli-wasm"
+version = "0.1.0"
+dependencies = [
+ "yew",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -603,13 +610,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1885c039570dc00dcb4ff087a89e185fd56bae234ddc7f056a945bf36467248d"
 dependencies = [
  "proc-macro2",
-]
-
-[[package]]
-name = "rust-wasm-github"
-version = "0.1.0"
-dependencies = [
- "yew",
 ]
 
 [[package]]

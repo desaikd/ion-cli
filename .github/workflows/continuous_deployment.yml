@@ -1,14 +1,14 @@
 name: Continuous deployment
 on:
-  workflow_run:
-    branches: [main]
-    workflows: [Continuous integration]
-    types: [completed]
+  push:
+    branches: [ wasm-experiment ]
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2
+
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
@@ -17,13 +17,15 @@ jobs:
       - uses: jetli/trunk-action@v0.1.0
       - uses: jetli/wasm-bindgen-action@v0.1.0
 
-      - uses: actions/checkout@v2
-      - working-directory: ./docs
-        run: trunk build --release
+      - name: Build
+        working-directory: ./ion-cli-wasm
+        run: |
+          trunk build --release --public-url /${{ github.event.repository.name }}/
 
-
-      - uses: peaceiris/actions-gh-pages@v3
-        if: github.ref == 'refs/heads/main'
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        if: github.ref == 'refs/heads/wasm-experiment'
         with:
-          github_token: $
-          publish_dir: ./dist
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./ion-cli-wasm/dist
+          force_orphan: true
