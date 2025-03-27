@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><link rel="modulepreload" href="/ion-cli/ion-cli-wasm-44b04265a8e2304e.js" crossorigin="anonymous" integrity="sha384-Rhp1vH6Wo8fawXc5RLtKCfZVBS4M7UUhU+dU5YKeYfaaq9r0nEON9TooJfdwyCuA"><link rel="preload" href="/ion-cli/ion-cli-wasm-44b04265a8e2304e_bg.wasm" crossorigin="anonymous" integrity="sha384-VbCYBTwlbYopK6Zqcy8ReA0cfT/1VB24ZzZESORQ0u5QDuE3wHYN+hv+5wz5iRXu" as="fetch" type="application/wasm"></head>
+<body>
+<script type="module">
+import init, * as bindings from '/ion-cli/ion-cli-wasm-44b04265a8e2304e.js';
+const wasm = await init({ module_or_path: '/ion-cli/ion-cli-wasm-44b04265a8e2304e_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script></body>
+</html>
